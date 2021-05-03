@@ -48,6 +48,7 @@ func run(k8sConfigFile string) {
 		p, ok := event.Object.(*v1.ServiceAccount)
 		if !ok {
 			log.Infof("unexpected type")
+			continue
 		}
 		for ak, _ := range p.Annotations {
 			if strings.EqualFold(ak, "azure.pod.identity/use") {
