@@ -7,10 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"math/big"
-	"sync"
-	"time"
 )
 
 //SKey - generic interface for signing key properties and methods
@@ -80,47 +77,14 @@ func (swk *swKey) init(key *rsa.PrivateKey) {
 	swk.jwk = fmt.Sprintf(`{"e":"%s","kty":"RSA","n":"%s","alg":"RS256","kid":"%s"}`, eB64, nB64, swk.keyID)
 }
 
-func generateSwKey() (*swKey, error) {
-	swk := &swKey{}
-	key, err := rsa.GenerateKey(rand.Reader, 2096)
-	if err != nil {
-		return nil, err
-	}
+var pswKey *swKey
 
-	swk.init(key)
-	return swk, nil
+func initSwSKey(key *rsa.PrivateKey) error {
+	pswKey = &swKey{}
+	pswKey.init(key)
+	return nil
 }
 
-var pswKey *swKey
-var pwsKeyMutex sync.Mutex
-
 func getSwSKey() SKey {
-	pwsKeyMutex.Lock()
-	defer pwsKeyMutex.Unlock()
-	if pswKey != nil {
-		return pswKey
-	}
-
-	key, err := generateSwKey()
-	if err != nil {
-		log.Fatal("unable to generate SKey")
-	}
-	pswKey = key
-
-	//rotate key every 1 month
-	ticker := time.NewTicker(30 * 24 * time.Hour)
-	go func() {
-		for {
-			<-ticker.C
-			key, err := generateSwKey()
-			if err != nil {
-				log.Fatal("unable to generate SKey")
-			}
-			pwsKeyMutex.Lock()
-			pswKey = key
-			pwsKeyMutex.Unlock()
-		}
-	}()
-
 	return pswKey
 }

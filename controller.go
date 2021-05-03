@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"fmt"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -30,6 +34,10 @@ func run(k8sConfigFile string) {
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
+		panic(err.Error())
+	}
+
+	if err = loadSigningKey(clientset); err != nil {
 		panic(err.Error())
 	}
 
@@ -74,6 +82,44 @@ func run(k8sConfigFile string) {
 	return
 }
 
-func loadSigningKey() error {
-	s, err := clientset.CoreV1().Secrets("azure-arc").Get(context.TODO(), )
+func loadSigningKey(clientset *kubernetes.Clientset) error {
+	var key *rsa.PrivateKey
+	s, err := clientset.CoreV1().Secrets("azure-arc").Get(context.TODO(), "arc-cidp", metav1.GetOptions{})
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			panic(err.Error())
+		}
+
+		log.Info("Generating signing key")
+		key, err = rsa.GenerateKey(rand.Reader, 2096)
+		if err != nil {
+			panic(err)
+		}
+		privateKeyBytes := x509.MarshalPKCS1PrivateKey(key)
+		cs := v1.Secret{}
+		cs.Name = "arc-cidp"
+		cs.Data = make(map[string][]byte)
+		cs.Data["signing-key"] = privateKeyBytes
+		_, err = clientset.CoreV1().Secrets("azure-arc").Create(context.TODO(), &cs, metav1.CreateOptions{})
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		log.Info("Loading signing key azure-arc:arc-cidp")
+		pkb := s.Data["signing-key"]
+		if err != nil {
+			panic(err)
+		}
+		key, err = x509.ParsePKCS1PrivateKey(pkb)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	if err = initSwSKey(key); err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Signing JWK: %s\n", getSwSKey().JWK())
+	return nil
 }
